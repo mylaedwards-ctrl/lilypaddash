@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lily Pad Dash</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #c9eaf7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Press Start 2P', monospace;
+  }
+  #popup {
+    border: 3px solid #a0b8c8;
+    box-shadow: 4px 4px 0 #a0b8c8;
+    background: #e8f4e8;
+    width: 620px;
+    max-width: 100%;
+  }
+  #titlebar {
+    background: #b8ddb8;
+    border-bottom: 3px solid #a0b8c8;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #titlebar span { color: #4a7a4a; font-size: 8px; letter-spacing: 1px; }
+  .winbtn {
+    width: 16px; height: 16px;
+    background: #d4ecd4; border: 2px solid #a0b8c8;
+    font-size: 7px; color: #4a7a4a; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-left: 4px;
+  }
+  #toolbar {
+    background: #daf0da;
+    border-bottom: 2px solid #a0b8c8;
+    padding: 4px 10px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  #canvas-wrap { position: relative; }
+  canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #scanlines {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255,255,255,0.06) 3px, rgba(255,255,255,0.06) 4px);
+  }
+  #overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(200, 235, 220, 0.82);
+    font-family: 'Press Start 2P', monospace;
+  }
+  #overlay .sub { font-size: 7px; color: #5a8a6a; margin-bottom: 6px; text-align: center; line-height: 2.4; }
+  #startBtn {
+    margin-top: 14px; padding: 9px 22px;
+    background: #b8e0b8; color: #2a5a2a;
+    border: 2px solid #7ab87a;
+    font-family: 'Press Start 2P', monospace; font-size: 8px; cursor: pointer;
+    box-shadow: 2px 2px 0 #7ab87a;
+  }
+  #startBtn:hover { background: #7ab87a; color: #fff; }
+
+  /* Flickering title */
+  @keyframes flicker {
+    0%   { opacity: 1;    color: #e87ab0; }
+    8%   { opacity: 0.85; color: #f0a0c8; }
+    10%  { opacity: 1;    color: #d06090; }
+    18%  { opacity: 1;    color: #e87ab0; }
+    20%  { opacity: 0.3;  color: #f0a0c8; }
+    22%  { opacity: 1;    color: #e87ab0; }
+    60%  { opacity: 1;    color: #c85890; }
+    61%  { opacity: 0.7;  color: #f0a0c8; }
+    62%  { opacity: 1;    color: #e87ab0; }
+    80%  { opacity: 1;    color: #e87ab0; }
+    82%  { opacity: 0.2;  color: #f0a0c8; }
+    84%  { opacity: 1;    color: #d06090; }
+    100% { opacity: 1;    color: #e87ab0; }
+  }
+  #gameTitle {
+    font-size: 20px;
+    color: #e87ab0;
+    text-shadow: 2px 2px 0 #f8c8e0, -1px -1px 0 #c85890;
+    margin-bottom: 14px;
+    animation: flicker 2.8s infinite;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+<div id="popup">
+  <div id="titlebar">
+    <span>🐸 LILY PAD DASH — v1.0</span>
+    <div>
+      <span class="winbtn">_</span>
+      <span class="winbtn">&#9633;</span>
+      <span class="winbtn">&#10005;</span>
+    </div>
+  </div>
+  <div id="toolbar">
+    <span id="scoreEl" style="color:#5a8a5a;font-size:7px;">SCORE: 0</span>
+    <span id="hiEl" style="color:#c07090;font-size:7px;">HI: 0</span>
+    <span style="color:#8aaa9a;font-size:6px;">&#8679; = JUMP LOGS &nbsp;|&nbsp; &#8681; = DUCK HERONS</span>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="gc" width="620" height="220"></canvas>
+    <div id="scanlines"></div>
+    <div id="overlay">
+      <div id="gameTitle">LILY PAD DASH</div>
+      <div class="sub">
+        &#8679; UP &nbsp;= Jump over LOGS<br>
+        &#8681; DOWN = Duck under HERONS
+      </div>
+      <button id="startBtn">[ PLAY ]</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gc');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const W = 620, H = 220;
+const GY = 162; // frog feet ground level
+
+// Heron body hitbox rows: HERON_Y+8 to HERON_Y+26
+// Standing frog top: GY-20=142. Ducking frog top: GY-4=158.
+// HERON_Y=118 → hitbox 126..144 → hits standing (142<144 ✓), misses ducking (158>144 ✓)
+const HERON_Y = 118;
+
+const scoreEl  = document.getElementById('scoreEl');
+const hiEl     = document.getElementById('hiEl');
+const overlay  = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+let state='idle', score=0, hi=0, frame=0, speed=4.2;
+let obstacles=[], pads=[], particles=[], clouds=[];
+let nextObs=80, raf;
+const frog = { x:76, y:GY, vy:0, jumping:false, ducking:false, jumpCount:0 };
+
+// Log height variants anchored to ground
+const LOG_HEIGHTS = [18, 24, 30, 38];
+
+// Pastel palette
+const C = {
+  sky1:    '#b8def5',  // light sky top
+  sky2:    '#d4eef8',  // sky mid
+  cloud1:  '#f0f8ff',  // cloud bright
+  cloud2:  '#ddeef8',  // cloud shadow
+  sun:     '#fff0a0',  // sun
+  sunRim:  '#ffe070',
+  water1:  '#7ecde8',  // water surface
+  water2:  '#5ab8d8',  // water shimmer
+  water3:  '#9eddf0',  // water highlight
+  grass1:  '#7acc7a',  // lily pad bright
+  grass2:  '#5aaa5a',  // lily pad mid
+  grass3:  '#4a8e4a',  // lily pad dark
+  grass4:  '#3a7a3a',  // lily pad outline
+  flower1: '#f8b8d8',  // petal pink
+  flower2: '#f090c0',  // petal deep
+  flowerC: '#ffe080',  // flower center
+  flowerC2:'#ffb030',
+  log1:    '#d4956a',  // log body
+  log2:    '#c07a50',  // log grain
+  log3:    '#b86040',  // log cap
+  log4:    '#e8b090',  // log bark
+  logWat:  '#7ecde8',
+  heron1:  '#e8d4f0',  // heron body
+  heron2:  '#d0b8e8',  // heron wing
+  heron3:  '#c0a0d8',  // heron dark wing
+  heron4:  '#f8f0ff',  // heron belly
+  heronBk: '#b090c8',  // heron beak
+  heronEy: '#ffa0a0',
+  frog1:   '#8adb8a',  // frog body
+  frog2:   '#6ac86a',  // frog mid
+  frog3:   '#5ab25a',  // frog dark
+  frog4:   '#4a9a4a',  // frog shadow
+  frogEye: '#2a4a2a',
+  frogShine:'#ccffcc',
+  frogChk: '#ffaaaa',  // cheeks
+  frogMou: '#3a6a3a',
+};
+
+// ── LILY PAD ──────────────────────────────────────────────────────────────────
+function drawLilyPad(bx, by, w, flower) {
+  // water outline
+  ctx.fillStyle=C.water1; ctx.fillRect(bx-3, by+10, w+6, 6);
+  ctx.fillStyle=C.water3; ctx.fillRect(bx+2, by+12, w-4, 3);
+  // pad layers
+  ctx.fillStyle=C.grass4; ctx.fillRect(bx+2, by,    w-4, 2);
+  ctx.fillStyle=C.grass2; ctx.fillRect(bx,   by+2,  w,   8);
+  ctx.fillStyle=C.grass1; ctx.fillRect(bx+2, by+2,  w-4, 5);
+  ctx.fillStyle=C.grass3; ctx.fillRect(bx+1, by+7,  w-2, 3);
+  // vein
+  ctx.fillStyle=C.grass4; ctx.fillRect(bx+(w/2|0)-1, by+1, 2, 9);
+  // notch
+  ctx.fillStyle=C.water1; ctx.fillRect(bx+(w/2|0)-1, by, 2, 3);
+  if (flower) {
+    const fx=bx+(w/2|0)-4, fy=by-9;
+    // petals
+    ctx.fillStyle=C.flower1;
+    ctx.fillRect(fx+2, fy-3, 4, 3);
+    ctx.fillRect(fx+2, fy+5, 4, 3);
+    ctx.fillStyle=C.flower2;
+    ctx.fillRect(fx-2, fy,   3, 5);
+    ctx.fillRect(fx+7, fy,   3, 5);
+    ctx.fillStyle=C.flower1;
+    ctx.fillRect(fx-1, fy-1, 3, 3);
+    ctx.fillRect(fx+6, fy-1, 3, 3);
+    ctx.fillRect(fx-1, fy+5, 3, 3);
+    ctx.fillRect(fx+6, fy+5, 3, 3);
+    // center
+    ctx.fillStyle=C.flowerC2; ctx.fillRect(fx+1, fy,   6, 5);
+    ctx.fillStyle=C.flowerC;  ctx.fillRect(fx+2, fy+1, 4, 3);
+  }
+}
+
+// ── LOG (variable height, bottom anchored to GY) ──────────────────────────────
+function drawLog(o) {
+  const bx=o.x|0, by=o.y|0, bw=o.w, bh=o.h;
+  // water outline at base
+  ctx.fillStyle=C.logWat; ctx.fillRect(bx-3, by+bh-3, bw+6, 7);
+  ctx.fillStyle=C.water3; ctx.fillRect(bx,   by+bh+2, bw,   3);
+  // end caps
+  ctx.fillStyle=C.log3;
+  ctx.fillRect(bx,       by+4, 8,    bh-10);
+  ctx.fillRect(bx+bw-8,  by+4, 8,    bh-10);
+  // body
+  ctx.fillStyle=C.log1; ctx.fillRect(bx+8, by+4, bw-16, bh-10);
+  // grain
+  ctx.fillStyle=C.log2;
+  for (let i=0; i<bh-14; i+=6) ctx.fillRect(bx+9, by+5+i, bw-18, 3);
+  // bark bands
+  ctx.fillStyle=C.log4;
+  ctx.fillRect(bx, by+4,    bw, 4);
+  ctx.fillRect(bx, by+bh-8, bw, 4);
+  // rings
+  ctx.fillStyle=C.log3;
+  ctx.fillRect(bx+3,    by+7, 3, bh-16);
+  ctx.fillRect(bx+bw-6, by+7, 3, bh-16);
+}
+
+// ── HERON ─────────────────────────────────────────────────────────────────────
+function drawHeron(o) {
+  const bx=o.x|0, by=o.y|0;
+  const wu = Math.sin(o.wingPhase)>0 ? 6 : -3;
+  // wings
+  ctx.fillStyle=C.heron2;
+  ctx.fillRect(bx-6,  by+10+wu, 16, 9);
+  ctx.fillRect(bx+20, by+10-wu, 16, 9);
+  ctx.fillStyle=C.heron3;
+  ctx.fillRect(bx-10, by+15+wu, 7, 5);
+  ctx.fillRect(bx+33, by+15-wu, 7, 5);
+  // body
+  ctx.fillStyle=C.heron1; ctx.fillRect(bx+4, by+8,  22, 22);
+  ctx.fillStyle=C.heron4; ctx.fillRect(bx+7, by+12, 12, 14);
+  // neck + head
+  ctx.fillStyle=C.heron1;
+  ctx.fillRect(bx+9, by+2, 8, 10);
+  ctx.fillRect(bx+8, by,   10, 8);
+  // crown (pastel lavender stripe)
+  ctx.fillStyle='#c8a0e8'; ctx.fillRect(bx+8, by, 10, 3);
+  // beak LEFT
+  ctx.fillStyle=C.heronBk; ctx.fillRect(bx-8, by+2, 16, 3);
+  ctx.fillStyle='#9870b8';  ctx.fillRect(bx-8, by+4, 16, 1);
+  // eye
+  ctx.fillStyle=C.heronEy; ctx.fillRect(bx+8, by+3, 4, 3);
+  ctx.fillStyle='#884488'; ctx.fillRect(bx+9, by+4, 2, 2);
+  // legs
+  ctx.fillStyle='#c8d8a8';
+  ctx.fillRect(bx+10, by+28, 3, 5);
+  ctx.fillRect(bx+17, by+28, 3, 5);
+  ctx.fillRect(bx+7,  by+31, 8, 2);
+  ctx.fillRect(bx+16, by+31, 8, 2);
+  o.wingPhase += 0.22;
+}
+
+// ── FROG ──────────────────────────────────────────────────────────────────────
+function drawFrog(bx, by, duck) {
+  const x=bx|0, y=by|0;
+  if (duck) {
+    ctx.fillStyle=C.frog4; ctx.fillRect(x-2,  y+10, 30, 6);
+    ctx.fillStyle=C.frog1; ctx.fillRect(x,     y+6,  26, 8);
+    ctx.fillStyle=C.frog2;
+    ctx.fillRect(x-2,  y+7, 4, 5);
+    ctx.fillRect(x+24, y+7, 4, 5);
+    ctx.fillStyle=C.frogEye;
+    ctx.fillRect(x+2,  y+6, 4, 4);
+    ctx.fillRect(x+18, y+6, 4, 4);
+    ctx.fillStyle=C.frogShine;
+    ctx.fillRect(x+3,  y+7, 2, 2);
+    ctx.fillRect(x+19, y+7, 2, 2);
+    ctx.fillStyle=C.frogChk;
+    ctx.fillRect(x+6,  y+9, 3, 2);
+    ctx.fillRect(x+15, y+9, 3, 2);
+    ctx.fillStyle=C.frogMou; ctx.fillRect(x+9, y+10, 8, 2);
+  } else {
+    ctx.fillStyle=C.frog1;
+    ctx.fillRect(x+1,  y-18, 20, 16);
+    ctx.fillRect(x-1,  y-14,  4,  8);
+    ctx.fillRect(x+19, y-14,  4,  8);
+    ctx.fillRect(x+4,  y-20, 14,  2);
+    ctx.fillRect(x+2,  y-21,  5,  3);
+    ctx.fillRect(x+15, y-21,  5,  3);
+    ctx.fillStyle=C.frogEye;
+    ctx.fillRect(x+2,  y-20, 5, 4);
+    ctx.fillRect(x+15, y-20, 5, 4);
+    ctx.fillStyle=C.frogShine;
+    ctx.fillRect(x+3,  y-19, 2, 2);
+    ctx.fillRect(x+16, y-19, 2, 2);
+    ctx.fillStyle=C.frog3; ctx.fillRect(x+1, y-4, 20, 2);
+    ctx.fillStyle=C.frogChk;
+    ctx.fillRect(x+4,  y-10, 4, 3);
+    ctx.fillRect(x+14, y-10, 4, 3);
+    ctx.fillStyle=C.frogMou; ctx.fillRect(x+7, y-7, 8, 2);
+    const lp=(frame>>3)%2;
+    ctx.fillStyle=C.frog2;
+    ctx.fillRect(x+2,  y-2+(lp?2:0), 7, 4);
+    ctx.fillRect(x+13, y-2+(lp?0:2), 7, 4);
+    ctx.fillStyle=C.frog3;
+    ctx.fillRect(x,    y+2+(lp?2:0), 9, 3);
+    ctx.fillRect(x+13, y+2+(lp?0:2), 9, 3);
+  }
+}
+
+// ── BACKGROUND (daytime) ──────────────────────────────────────────────────────
+let cloudList = [];
+function initClouds() {
+  cloudList = [
+    {x:60,  y:22, w:80, h:22},
+    {x:220, y:14, w:110,h:28},
+    {x:420, y:28, w:70, h:18},
+    {x:550, y:10, w:90, h:24},
+  ];
+}
+
+function drawBg() {
+  // Sky gradient (pixel stepped)
+  ctx.fillStyle='#a8d8f0'; ctx.fillRect(0, 0,  W, 60);
+  ctx.fillStyle='#b8e2f8'; ctx.fillRect(0, 60, W, 40);
+  ctx.fillStyle='#cceeff'; ctx.fillRect(0,100, W, 40);
+  ctx.fillStyle='#d8f4f0'; ctx.fillRect(0,140, W, GY+10-140);
+
+  // Sun
+  ctx.fillStyle=C.sunRim; ctx.fillRect(540, 12, 36, 36);
+  ctx.fillStyle=C.sun;    ctx.fillRect(544, 16, 28, 28);
+  // sun rays (pixel lines)
+  ctx.fillStyle=C.sunRim;
+  ctx.fillRect(554,  4,  8, 6);
+  ctx.fillRect(554, 44,  8, 6);
+  ctx.fillRect(530, 24,  8, 8);
+  ctx.fillRect(578, 24,  8, 8);
+
+  // Clouds
+  cloudList.forEach(c => {
+    ctx.fillStyle=C.cloud2;
+    ctx.fillRect(c.x|0,   c.y+c.h/2, c.w,     c.h/2+2);
+    ctx.fillRect(c.x+8|0, c.y+4,     c.w-16,  c.h/2);
+    ctx.fillStyle=C.cloud1;
+    ctx.fillRect(c.x+4|0, c.y,       c.w-8,   c.h/2+2);
+    ctx.fillRect(c.x+12|0,c.y-4,     c.w-24,  c.h/2);
+    c.x -= 0.25;
+    if (c.x < -c.w-20) c.x = W+20;
+  });
+
+  // Ground strip / water surface
+  ctx.fillStyle=C.water1; ctx.fillRect(0, GY+8,  W, H-GY-8);
+  ctx.fillStyle=C.water3; ctx.fillRect(0, GY+8,  W, 5);
+  ctx.fillStyle=C.water2;
+  for (let i=0; i<W; i+=22) ctx.fillRect((i+frame*0.6)%W, GY+14, 12, 3);
+  for (let i=0; i<W; i+=30) ctx.fillRect((i+frame*0.4+14)%W, GY+20, 16, 2);
+  // light ground strip behind pads
+  ctx.fillStyle='#c8ecc0'; ctx.fillRect(0, GY-2, W, 12);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+function initPads() {
+  pads = [];
+  for (let i=0;i<14;i++) pads.push({x:i*48, y:GY+2, w:38, flower:i%3===0});
+}
+
+function spawnObs() {
+  const type = Math.random()<0.5 ? 'log' : 'heron';
+  if (type==='log') {
+    const bh = LOG_HEIGHTS[Math.floor(Math.random()*LOG_HEIGHTS.length)];
+    obstacles.push({ type:'log', x:W+20, y:GY-bh, w:40, h:bh, wingPhase:0 });
+  } else {
+    obstacles.push({ type:'heron', x:W+20, y:HERON_Y, w:38, h:34, wingPhase:0 });
+  }
+}
+
+function resetGame() {
+  score=0; frame=0; speed=4.2;
+  obstacles=[]; particles=[];
+  frog.y=GY; frog.vy=0; frog.jumping=false; frog.ducking=false; frog.jumpCount=0;
+  initPads(); initClouds();
+  nextObs=80;
+}
+
+// ── COLLISION ─────────────────────────────────────────────────────────────────
+function checkHit() {
+  const fx1 = frog.ducking ? frog.x    : frog.x+2;
+  const fx2 = frog.ducking ? frog.x+26 : frog.x+20;
+  const fy1 = frog.ducking ? frog.y-4  : frog.y-18;
+  const fy2 = frog.y;
+
+  for (let o of obstacles) {
+    const ox1=o.x+4, ox2=o.x+o.w-4;
+    const oy1=o.type==='heron' ? o.y+8  : o.y+4;
+    const oy2=o.type==='heron' ? o.y+26 : o.y+o.h-4;
+    if (fx1<ox2 && fx2>ox1 && fy1<oy2 && fy2>oy1) return true;
+  }
+  return false;
+}
+
+function spawnDeathPx() {
+  for (let i=0;i<26;i++) {
+    const a=Math.random()*Math.PI*2;
+    particles.push({
+      x:frog.x+11, y:frog.y-10,
+      vx:Math.cos(a)*(1+Math.random()*4),
+      vy:Math.sin(a)*(1+Math.random()*4)-3,
+      s:3+(Math.random()*3|0),
+      c:['#8adb8a','#f8b8d8','#ffe080','#ffaaaa','#c8a0e8'][Math.random()*5|0],
+      life:30+(Math.random()*20|0)
+    });
+  }
+}
+
+// ── GAME LOOP ─────────────────────────────────────────────────────────────────
+function gameLoop() {
+  ctx.clearRect(0,0,W,H);
+  drawBg();
+
+  pads.forEach(p => {
+    drawLilyPad(p.x, p.y, p.w, p.flower);
+    p.x -= speed;
+    if (p.x+p.w < 0) {
+      const maxX=pads.reduce((m,q)=>Math.max(m,q.x),0);
+      p.x=maxX+48; p.flower=Math.random()<0.35;
+    }
+  });
+
+  frame++;
+  score += 0.1*(speed/4.2);
+  speed = 4.2 + score*0.014;
+  if (speed>14) speed=14;
+  scoreEl.textContent='SCORE: '+(score|0);
+
+  if (frame>=nextObs) {
+    spawnObs();
+    if (Math.random()<0.20 && score>80) {
+      const delay=Math.max(500, 700-score*2);
+      setTimeout(()=>{ if(state==='playing') spawnObs(); }, delay);
+    }
+    let gap=(48+Math.random()*55)*(4.2/speed);
+    if (gap<40) gap=40;
+    nextObs=frame+gap;
+  }
+
+  if (frog.jumping) {
+    frog.vy += 0.6;
+    frog.y  += frog.vy;
+    if (frog.y>=GY) { frog.y=GY; frog.jumping=false; frog.jumpCount=0; frog.vy=0; }
+  }
+
+  obstacles.forEach(o => {
+    if (o.type==='log') drawLog(o);
+    else drawHeron(o);
+    o.x -= speed;
+  });
+  obstacles=obstacles.filter(o=>o.x>-80);
+
+  drawFrog(frog.x, frog.y, frog.ducking);
+
+  particles=particles.filter(p=>p.life>0);
+  particles.forEach(p => {
+    ctx.fillStyle=p.c; ctx.fillRect(p.x|0,p.y|0,p.s,p.s);
+    p.x+=p.vx; p.y+=p.vy; p.vy+=0.35; p.life--;
+  });
+
+  // HUD
+  ctx.font='7px "Press Start 2P"';
+  ctx.fillStyle='#3a7a3a';
+  ctx.fillText('SCORE '+(score|0), 8, 14);
+  if ((score|0)>0 && (score|0)%100===0 && frame%10<5) {
+    ctx.fillStyle='#e87ab0';
+    ctx.fillText('FASTER!', W/2-30, 30);
+  }
+
+  if (checkHit()) {
+    spawnDeathPx();
+    particles.forEach(p=>{ ctx.fillStyle=p.c; ctx.fillRect(p.x|0,p.y|0,p.s,p.s); p.x+=p.vx; p.y+=p.vy; p.life--; });
+    state='dead';
+    if (score>hi) hi=score;
+    hiEl.textContent='HI: '+(hi|0);
+    showDead();
+    return;
+  }
+  raf=requestAnimationFrame(gameLoop);
+}
+
+function showDead() {
+  overlay.innerHTML=`
+    <div id="gameTitle" style="font-size:20px;color:#e87ab0;text-shadow:2px 2px 0 #f8c8e0,-1px -1px 0 #c85890;margin-bottom:14px;animation:flicker 2.8s infinite;letter-spacing:1px;font-family:'Press Start 2P',monospace;">LILY PAD DASH</div>
+    <div style="font-size:11px;color:#c06080;margin-bottom:10px;font-family:'Press Start 2P',monospace;">GAME OVER</div>
+    <div style="font-size:7px;color:#5a8a6a;margin-bottom:5px;font-family:'Press Start 2P',monospace;">SCORE: ${score|0}</div>
+    <div style="font-size:7px;color:#c07090;margin-bottom:14px;font-family:'Press Start 2P',monospace;">BEST: ${hi|0}</div>
+    <button id="startBtn" style="padding:9px 22px;background:#b8e0b8;color:#2a5a2a;border:2px solid #7ab87a;font-family:'Press Start 2P',monospace;font-size:8px;cursor:pointer;box-shadow:2px 2px 0 #7ab87a;">[ RETRY ]</button>
+  `;
+  overlay.style.display='flex';
+  document.getElementById('startBtn').addEventListener('click', startGame);
+}
+
+function startGame() {
+  overlay.style.display='none';
+  cancelAnimationFrame(raf);
+  resetGame();
+  state='playing';
+  gameLoop();
+}
+
+startBtn.addEventListener('click', startGame);
+
+document.addEventListener('keydown', e => {
+  if (state!=='playing') return;
+  if (e.code==='ArrowUp') {
+    if (frog.jumpCount<2 && !frog.ducking) {
+      frog.jumping=true; frog.vy=-12; frog.jumpCount++;
+    }
+    e.preventDefault();
+  }
+  if (e.code==='ArrowDown') {
+    if (!frog.jumping) frog.ducking=true;
+    e.preventDefault();
+  }
+});
+document.addEventListener('keyup', e => {
+  if (e.code==='ArrowDown') frog.ducking=false;
+});
+
+canvas.addEventListener('pointerdown', e => {
+  if (state!=='playing') return;
+  const r=canvas.getBoundingClientRect();
+  if (e.clientY-r.top < H*0.6) {
+    if (frog.jumpCount<2 && !frog.ducking) { frog.jumping=true; frog.vy=-12; frog.jumpCount++; }
+  } else {
+    if (!frog.jumping) frog.ducking=true;
+  }
+});
+canvas.addEventListener('pointerup', ()=>frog.ducking=false);
+</script>
+</body>
+</html>
